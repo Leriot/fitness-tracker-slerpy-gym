@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Papa from 'papaparse';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import './App.css';
+import './App.css'; // Import the CSS file for dark mode
 
 const App = () => {
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState('');
@@ -9,6 +9,7 @@ const App = () => {
   const [error, setError] = useState('');
   const [showGraphs, setShowGraphs] = useState(false);
   const [selectedSource, setSelectedSource] = useState('xiaomi');
+  const [normalize, setNormalize] = useState(false);
 
   const handleUrlSubmit = async (e) => {
     e.preventDefault();
@@ -33,29 +34,43 @@ const App = () => {
             return;
           }
 
-          const expectedColumns = ['date', 'weight', 'fat_percentage', 'bmi', 'source'];
-          const hasAllColumns = expectedColumns.every(col => 
-            results.meta.fields.includes(col)
-          );
-
-          if (!hasAllColumns) {
-            setError('CSV is missing required columns');
-            return;
-          }
-
-          const processedData = results.data
-            .filter(row => row.date && row.weight)
-            .map(row => ({
-              ...row,
-              date: new Date(row.date).toLocaleDateString(), // Convert to readable date string
-              dateObj: new Date(row.date) // Keep original date for sorting
-            }))
-            .sort((a, b) => a.dateObj - b.dateObj);
-
-          setFitnessData(processedData);
-          setShowGraphs(false);
+          processCSV(results);
         }
       });
+    } catch (err) {
+      setError('Error loading CSV: ' + err.message);
+      console.error(err);
+    }
+  };
+
+  const processCSV = (results) => {
+    try {
+      const hasAllColumns = results.data.every(row => row.date && row.weight && row.fat_percentage && row.bmi);
+      if (!hasAllColumns) {
+        setError('CSV is missing required columns');
+        return;
+      }
+
+      const processedData = results.data
+        .filter(row => row.date && row.weight)
+        .map(row => ({
+          ...row,
+          date: new Date(row.date).toLocaleDateString(), // Convert to readable date string
+          dateObj: new Date(row.date) // Keep original date for sorting
+        }))
+        .sort((a, b) => a.dateObj - b.dateObj);
+
+      if (normalize) {
+        const earliest = processedData[0];
+        processedData.forEach(row => {
+          row.weight = (row.weight / earliest.weight) * 100;
+          row.fat_percentage = (row.fat_percentage / earliest.fat_percentage) * 100;
+          row.bmi = (row.bmi / earliest.bmi) * 100;
+        });
+      }
+
+      setFitnessData(processedData);
+      setShowGraphs(false);
     } catch (err) {
       setError('Error loading CSV: ' + err.message);
       console.error(err);
@@ -74,12 +89,16 @@ const App = () => {
     });
   };
 
+  const handleNormalizeToggle = () => {
+    setNormalize(prevNormalize => !prevNormalize);
+  };
+
   const filteredData = selectedSource === 'both' 
     ? fitnessData 
     : fitnessData.filter(data => data.source === selectedSource);
 
   return (
-    <div className="App">
+    <div className="App dark-mode">
       <h1>Fitness Progress Tracker</h1>
       <form onSubmit={handleUrlSubmit} className="csv-uploader">
         <input 
@@ -106,6 +125,9 @@ const App = () => {
           </button>
           <button onClick={handleToggle}>
             Toggle Source (Current: {selectedSource})
+          </button>
+          <button onClick={handleNormalizeToggle}>
+            {normalize ? 'Disable Normalization' : 'Enable Normalization'}
           </button>
         </div>
       )}
