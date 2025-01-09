@@ -50,7 +50,10 @@ const App = () => {
       .filter(row => row.date && row.weight)
       .map(row => ({
         ...row,
-        date: new Date(row.date).toLocaleDateString('en-GB'), // Force UK date format
+        date: new Date(row.date).toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: '2-digit'
+        }), // Format as DD/MM
         dateObj: new Date(row.date)
       }))
       .sort((a, b) => a.dateObj - b.dateObj);
@@ -114,6 +117,8 @@ const App = () => {
   return (
     <div className="App dark-mode">
       <h1>Fitness Progress Tracker</h1>
+      
+      {/* Form and buttons remain at top */}
       <form onSubmit={handleUrlSubmit} className="csv-uploader">
         <input 
           type="text" 
@@ -146,9 +151,85 @@ const App = () => {
         </div>
       )}
       
+      {/* Graph moved above table */}
+      {showGraphs && (
+        <div className="graph-container">
+          <h2>Data Preview</h2>
+          <ResponsiveContainer width="100%" height={400}>
+            <LineChart
+              data={filteredData}
+              margin={{
+                top: 20,
+                right: 50,
+                left: 30,
+                bottom: 50
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
+              <XAxis
+                dataKey="date"
+                angle={-90}
+                textAnchor="end"
+                height={60}
+                tick={{ dy: 30, fill: '#ffffff' }}
+              />
+              {/* Left Y-axis for Weight */}
+              <YAxis
+                yAxisId="weight"
+                orientation="left"
+                stroke="#8884d8"
+                tick={{ fill: '#ffffff' }}
+              />
+              {/* Right Y-axis for BMI and Fat % */}
+              <YAxis
+                yAxisId="metrics"
+                orientation="right"
+                domain={[10, 30]}
+                stroke="#82ca9d"
+                tick={{ fill: '#ffffff' }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#333333',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: '#ffffff'
+                }}
+              />
+              <Legend wrapperStyle={{ color: '#ffffff' }}/>
+              <Line
+                yAxisId="weight"
+                type="monotone"
+                dataKey="weight"
+                stroke="#8884d8"
+                strokeWidth={2}
+                dot={{ fill: '#8884d8' }}
+              />
+              <Line
+                yAxisId="metrics"
+                type="monotone"
+                dataKey="fat_percentage"
+                stroke="#82ca9d"
+                strokeWidth={2}
+                dot={{ fill: '#82ca9d' }}
+              />
+              <Line
+                yAxisId="metrics"
+                type="monotone"
+                dataKey="bmi"
+                stroke="#ffc658"
+                strokeWidth={2}
+                dot={{ fill: '#ffc658' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      
+      {/* Table moved below graph */}
       {fitnessData.length > 0 && (
         <div className="data-preview">
-          <h2>Loaded Data Preview</h2>
+          <h2>Loaded Data Table Preview</h2>
           <table>
             <thead>
               <tr>
@@ -171,76 +252,6 @@ const App = () => {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {showGraphs && fitnessData.length > 0 && (
-        <div className="graphs-container">
-          <h2>Fitness Progress Graphs</h2>
-          
-          <button onClick={handleToggle}>
-            Toggle Source (Current: {selectedSource})
-          </button>
-
-          {/* Weight Graph */}
-          <div className="graph">
-            <h3>Weight Progression</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={filteredData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="weight" 
-                  stroke="#8884d8" 
-                  activeDot={{ r: 8 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Fat Percentage Graph */}
-          <div className="graph">
-            <h3>Fat Percentage Progression</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={filteredData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="fat_percentage" 
-                  stroke="#82ca9d" 
-                  activeDot={{ r: 8 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* BMI Graph */}
-          <div className="graph">
-            <h3>BMI Progression</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={filteredData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="bmi" 
-                  stroke="#ffc658" 
-                  activeDot={{ r: 8 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
         </div>
       )}
     </div>
