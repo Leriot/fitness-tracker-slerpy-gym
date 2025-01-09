@@ -4,9 +4,11 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import './App.css'; // Import the CSS file for dark mode
 
 const App = () => {
+  // Add new state for original data
+  const [originalData, setOriginalData] = useState([]);
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState('');
   const [fitnessData, setFitnessData] = useState([]);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
   const [showGraphs, setShowGraphs] = useState(false);
   const [selectedSource, setSelectedSource] = useState('xiaomi');
   const [normalize, setNormalize] = useState(false);
@@ -43,33 +45,41 @@ const App = () => {
     }
   };
 
+  const processDataWithNormalization = (data, shouldNormalize) => {
+    const processedData = data
+      .filter(row => row.date && row.weight)
+      .map(row => ({
+        ...row,
+        date: new Date(row.date).toLocaleDateString('en-GB'), // Force UK date format
+        dateObj: new Date(row.date)
+      }))
+      .sort((a, b) => a.dateObj - b.dateObj);
+
+    if (shouldNormalize) {
+      const earliest = processedData[0];
+      return processedData.map(row => ({
+        ...row,
+        weight: Number((row.weight / earliest.weight * 100).toFixed(1)),
+        fat_percentage: Number((row.fat_percentage / earliest.fat_percentage * 100).toFixed(1)),
+        bmi: Number((row.bmi / earliest.bmi * 100).toFixed(1))
+      }));
+    }
+    return processedData;
+  };
+
   const processCSV = (results) => {
     try {
-      const hasAllColumns = results.data.every(row => row.date && row.weight && row.fat_percentage && row.bmi);
+      const hasAllColumns = results.data.every(row => 
+        row.date && row.weight && row.fat_percentage && row.bmi
+      );
       if (!hasAllColumns) {
         setError('CSV is missing required columns');
         return;
       }
-
-      const processedData = results.data
-        .filter(row => row.date && row.weight)
-        .map(row => ({
-          ...row,
-          date: new Date(row.date).toLocaleDateString(), // Convert to readable date string
-          dateObj: new Date(row.date) // Keep original date for sorting
-        }))
-        .sort((a, b) => a.dateObj - b.dateObj);
-
-      if (normalize) {
-        const earliest = processedData[0];
-        processedData.forEach(row => {
-          row.weight = (row.weight / earliest.weight) * 100;
-          row.fat_percentage = (row.fat_percentage / earliest.fat_percentage) * 100;
-          row.bmi = (row.bmi / earliest.bmi) * 100;
-        });
-      }
-
-      setFitnessData(processedData);
+      
+      const processed = processDataWithNormalization(results.data, normalize);
+      setOriginalData(results.data); // Store original data
+      setFitnessData(processed);
       setShowGraphs(false);
     } catch (err) {
       setError('Error loading CSV: ' + err.message);
@@ -90,7 +100,11 @@ const App = () => {
   };
 
   const handleNormalizeToggle = () => {
-    setNormalize(prevNormalize => !prevNormalize);
+    setNormalize(prev => !prev);
+    if (originalData.length > 0) {
+      const processed = processDataWithNormalization(originalData, !normalize);
+      setFitnessData(processed);
+    }
   };
 
   const filteredData = selectedSource === 'both' 
