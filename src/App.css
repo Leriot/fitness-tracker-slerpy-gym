@@ -146,3 +146,80 @@ tr:hover {
 .data-actions button:hover {
   background-color: #555555;
 }
+
+.source-selector {
+  position: relative;
+  display: inline-block;
+}
+
+.source-menu-button {
+  padding: 10px 15px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.source-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: #333333;
+  border-radius: 4px;
+  padding: 10px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  z-index: 1000;
+}
+
+.source-checkbox {
+  display: block;
+  padding: 5px 10px;
+  color: white;
+  cursor: pointer;
+}
+
+.source-checkbox input {
+  margin-right: 8px;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.table-toggle {
+  background-color: #333333;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.table-toggle:hover {
+  background-color: #444444;
+}
+
+.data-preview table {
+  transition: max-height 0.3s ease-in-out;
+  overflow: hidden;
+}
+
+.table-notice {
+  color: #888888;
+  font-size: 0.9em;
+  margin-bottom: 10px;
+  text-align: left;
+}
+
+.table-indicator td {
+  text-align: center;
+  color: #888888;
+  padding: 10px;
+  font-weight: bold;
+  background-color: #1e1e1e;
+}

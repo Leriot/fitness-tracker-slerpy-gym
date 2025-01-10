@@ -10,8 +10,12 @@ const App = () => {
   const [fitnessData, setFitnessData] = useState([]);
   const [error, setError] = useState(null);
   const [showGraphs, setShowGraphs] = useState(false);
-  const [selectedSource, setSelectedSource] = useState('xiaomi');
+  const [selectedSource, setSelectedSource] = useState('both');
   const [normalize, setNormalize] = useState(false);
+  const [availableSources, setAvailableSources] = useState([]);
+  const [selectedSources, setSelectedSources] = useState(new Set());
+  const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false);
+  const [isTableExpanded, setIsTableExpanded] = useState(false);
 
   const handleUrlSubmit = async (e) => {
     e.preventDefault();
@@ -45,7 +49,8 @@ const App = () => {
     }
   };
 
-  const processDataWithNormalization = (data, shouldNormalize) => {
+  const processDataWithNormalization = (data, shouldNormalize, activeData) => {
+    // First process dates and sort
     const processedData = data
       .filter(row => row.date && row.weight)
       .map(row => ({
@@ -53,13 +58,14 @@ const App = () => {
         date: new Date(row.date).toLocaleDateString('en-GB', {
           day: '2-digit',
           month: '2-digit'
-        }), // Format as DD/MM
+        }),
         dateObj: new Date(row.date)
       }))
       .sort((a, b) => a.dateObj - b.dateObj);
 
-    if (shouldNormalize) {
-      const earliest = processedData[0];
+    if (shouldNormalize && activeData && activeData.length > 0) {
+      // Use first entry of currently displayed data as baseline
+      const earliest = activeData[0];
       return processedData.map(row => ({
         ...row,
         weight: Number((row.weight / earliest.weight * 100).toFixed(1)),
@@ -80,8 +86,14 @@ const App = () => {
         return;
       }
       
-      const processed = processDataWithNormalization(results.data, normalize);
-      setOriginalData(results.data); // Store original data
+      // Extract unique sources
+      const sources = [...new Set(results.data.map(row => row.source))];
+      setAvailableSources(sources);
+      setSelectedSources(new Set(sources)); // Initially select all sources
+      
+      const filtered = results.data;  // Initially all data is filtered
+      const processed = processDataWithNormalization(results.data, normalize, filtered);
+      setOriginalData(results.data);
       setFitnessData(processed);
       setShowGraphs(false);
     } catch (err) {
@@ -94,25 +106,38 @@ const App = () => {
     setShowGraphs(true);
   };
 
-  const handleToggle = () => {
-    setSelectedSource(prevSource => {
-      if (prevSource === 'xiaomi') return 'inbody';
-      if (prevSource === 'inbody') return 'both';
-      return 'xiaomi';
-    });
+  const handleSourceToggle = (source) => {
+    const newSources = new Set(selectedSources);
+    if (newSources.has(source)) {
+      newSources.delete(source);
+    } else {
+      newSources.add(source);
+    }
+    
+    // Filter data with new sources before processing
+    const filtered = originalData.filter(data => 
+      newSources.has(data.source)
+    );
+    const processed = processDataWithNormalization(originalData, normalize, filtered);
+    
+    setSelectedSources(newSources);
+    setFitnessData(processed);
   };
 
   const handleNormalizeToggle = () => {
-    setNormalize(prev => !prev);
-    if (originalData.length > 0) {
-      const processed = processDataWithNormalization(originalData, !normalize);
-      setFitnessData(processed);
-    }
+    const newNormalize = !normalize;
+    const filtered = originalData.filter(data => 
+      selectedSources.has(data.source)
+    );
+    const processed = processDataWithNormalization(originalData, newNormalize, filtered);
+    
+    setNormalize(newNormalize);
+    setFitnessData(processed);
   };
 
-  const filteredData = selectedSource === 'both' 
-    ? fitnessData 
-    : fitnessData.filter(data => data.source === selectedSource);
+  const filteredData = fitnessData.filter(data => 
+    selectedSources.has(data.source)
+  );
 
   return (
     <div className="App dark-mode">
@@ -142,16 +167,34 @@ const App = () => {
           >
             Generate Graphs
           </button>
-          <button onClick={handleToggle}>
-            Toggle Source (Current: {selectedSource})
-          </button>
+          <div className="source-selector">
+            <button 
+              onClick={() => setIsSourceMenuOpen(!isSourceMenuOpen)}
+              className="source-menu-button"
+            >
+              Data Sources ▼
+            </button>
+            {isSourceMenuOpen && (
+              <div className="source-menu">
+                {availableSources.map(source => (
+                  <label key={source} className="source-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selectedSources.has(source)}
+                      onChange={() => handleSourceToggle(source)}
+                    />
+                    {source}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={handleNormalizeToggle}>
             {normalize ? 'Disable Normalization' : 'Enable Normalization'}
           </button>
         </div>
       )}
       
-      {/* Graph moved above table */}
       {showGraphs && (
         <div className="graph-container">
           <h2>Data Preview</h2>
@@ -173,14 +216,12 @@ const App = () => {
                 height={60}
                 tick={{ dy: 30, fill: '#ffffff' }}
               />
-              {/* Left Y-axis for Weight */}
               <YAxis
                 yAxisId="weight"
                 orientation="left"
                 stroke="#8884d8"
                 tick={{ fill: '#ffffff' }}
               />
-              {/* Right Y-axis for BMI and Fat % */}
               <YAxis
                 yAxisId="metrics"
                 orientation="right"
@@ -196,7 +237,14 @@ const App = () => {
                   color: '#ffffff'
                 }}
               />
-              <Legend wrapperStyle={{ color: '#ffffff' }}/>
+              <Legend 
+                verticalAlign="top"
+                height={36}
+                wrapperStyle={{
+                  color: '#ffffff',
+                  paddingTop: '10px'
+                }}
+              />
               <Line
                 yAxisId="weight"
                 type="monotone"
@@ -204,6 +252,7 @@ const App = () => {
                 stroke="#8884d8"
                 strokeWidth={2}
                 dot={{ fill: '#8884d8' }}
+                name="Weight"
               />
               <Line
                 yAxisId="metrics"
@@ -212,6 +261,7 @@ const App = () => {
                 stroke="#82ca9d"
                 strokeWidth={2}
                 dot={{ fill: '#82ca9d' }}
+                name="Body Fat %"
               />
               <Line
                 yAxisId="metrics"
@@ -220,6 +270,7 @@ const App = () => {
                 stroke="#ffc658"
                 strokeWidth={2}
                 dot={{ fill: '#ffc658' }}
+                name="BMI"
               />
             </LineChart>
           </ResponsiveContainer>
@@ -229,7 +280,20 @@ const App = () => {
       {/* Table moved below graph */}
       {fitnessData.length > 0 && (
         <div className="data-preview">
-          <h2>Loaded Data Table Preview</h2>
+          <div className="table-header">
+            <h2>Loaded Data Table Preview</h2>
+            <button 
+              onClick={() => setIsTableExpanded(!isTableExpanded)}
+              className="table-toggle"
+            >
+              {isTableExpanded ? 'Show Less ▲' : 'Show More ▼'}
+            </button>
+          </div>
+          {!isTableExpanded && filteredData.length > 1 && (
+            <div className="table-notice">
+              Showing most recent entry only. Click 'Show More' to see all {filteredData.length} entries.
+            </div>
+          )}
           <table>
             <thead>
               <tr>
@@ -241,7 +305,7 @@ const App = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((entry, index) => (
+              {(isTableExpanded ? [...filteredData].reverse() : [filteredData[filteredData.length - 1]]).map((entry, index) => (
                 <tr key={index}>
                   <td>{entry.date}</td>
                   <td>{entry.weight}</td>
@@ -250,6 +314,11 @@ const App = () => {
                   <td>{entry.source}</td>
                 </tr>
               ))}
+              {!isTableExpanded && filteredData.length > 1 && (
+                <tr className="table-indicator">
+                  <td colSpan="5">...</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
