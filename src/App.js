@@ -1,7 +1,8 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, NavLink } from 'react-router-dom';
 import WeightTracker from './components/WeightTracker/WeightTracker';
 import GymTracker from './components/GymTracker/GymTracker';
+import Home from './components/Home/Home';
 import './App.css';
 
 const App = () => {
@@ -9,19 +10,25 @@ const App = () => {
     <Router>
       <div className="App dark-mode">
         <nav className="main-nav">
-          <Link to="/" className="nav-link">Home</Link>
+          <NavLink to="/" className={({ isActive }) => 
+            isActive ? "nav-link active" : "nav-link"
+          }>
+            Home
+          </NavLink>
+          <NavLink to="/weight" className={({ isActive }) => 
+            isActive ? "nav-link active" : "nav-link"
+          }>
+            Weight Tracker
+          </NavLink>
+          <NavLink to="/gym" className={({ isActive }) => 
+            isActive ? "nav-link active" : "nav-link"
+          }>
+            Gym Progress
+          </NavLink>
         </nav>
 
         <Routes>
-          <Route path="/" element={
-            <div className="tracker-selection">
-              <h1>Fitness Tracker Hub</h1>
-              <div className="tracker-buttons">
-                <Link to="/weight" className="tracker-button">Weight Tracker</Link>
-                <Link to="/gym" className="tracker-button">Gym Progress</Link>
-              </div>
-            </div>
-          } />
+          <Route path="/" element={<Home />} />
           <Route path="/weight" element={<WeightTracker />} />
           <Route path="/gym" element={<GymTracker />} />
         </Routes>

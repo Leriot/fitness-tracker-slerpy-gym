@@ -1,98 +1,34 @@
 import React, { useState } from 'react';
-import Papa from 'papaparse';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import DataImporter from '../DataImporter/DataImporter';
 import './WeightTracker.css';
 
-const PREDEFINED_SOURCES = {
-  lerito: {
-    name: "Lerito",
-    url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vThTzKmTRk3F8icHWCdKa4sBRyBR1yixAt8lfgxoU6YJYCgxvmDCZc3oqdJjM7e3kyUU0TGKofPMAb1/pub?output=csv"
-  }
-  // Add more sources here as needed
-};
-
 const WeightTracker = () => {
-  // Add new state for original data
   const [originalData, setOriginalData] = useState([]);
-  const [googleSheetsUrl, setGoogleSheetsUrl] = useState('');
   const [fitnessData, setFitnessData] = useState([]);
-  const [error, setError] = useState(null);
   const [showGraphs, setShowGraphs] = useState(false);
-  const [selectedSource, setSelectedSource] = useState('both');
   const [normalize, setNormalize] = useState(false);
   const [availableSources, setAvailableSources] = useState([]);
   const [selectedSources, setSelectedSources] = useState(new Set());
   const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
-  const [loadedSource, setLoadedSource] = useState(null);
+  const [error, setError] = useState(null);
 
-  const clearData = () => {
-    setOriginalData([]);
-    setFitnessData([]);
-    setShowGraphs(false);
-    setError(null);
-    setLoadedSource(null);
-    setGoogleSheetsUrl('');
-  };
-
-  const loadPredefinedSource = async (sourceKey) => {
-    const source = PREDEFINED_SOURCES[sourceKey];
-    if (!source) return;
+  const handleDataLoaded = (data) => {
+    if (!data) {
+      setOriginalData([]);
+      setFitnessData([]);
+      setShowGraphs(false);
+      return;
+    }
     
-    try {
-      const response = await fetch(source.url);
-      if (!response.ok) throw new Error('Failed to fetch CSV');
-      
-      const csvText = await response.text();
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: true,
-        complete: (results) => {
-          if (results.errors.length > 0) {
-            setError('Error parsing CSV');
-            console.error(results.errors);
-            return;
-          }
-          setLoadedSource(source.name);
-          processCSV(results);
-        }
-      });
-    } catch (err) {
-      setError('Error loading CSV: ' + err.message);
-      console.error(err);
-    }
-  };
-
-  const handleUrlSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    try {
-      const response = await fetch(googleSheetsUrl);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch CSV');
-      }
-
-      const csvText = await response.text();
-
-      Papa.parse(csvText, {
-        header: true,
-        dynamicTyping: true,
-        complete: (results) => {
-          if (results.errors.length > 0) {
-            setError('Error parsing CSV');
-            console.error(results.errors);
-            return;
-          }
-
-          processCSV(results);
-        }
-      });
-    } catch (err) {
-      setError('Error loading CSV: ' + err.message);
-      console.error(err);
-    }
+    const sources = [...new Set(data.map(row => row.source))];
+    setAvailableSources(sources);
+    setSelectedSources(new Set(sources));
+    
+    const processed = processDataWithNormalization(data, normalize);
+    setOriginalData(data);
+    setFitnessData(processed);
   };
 
   const processDataWithNormalization = (data, shouldNormalize, activeData) => {
@@ -105,6 +41,7 @@ const WeightTracker = () => {
           day: '2-digit',
           month: '2-digit'
         }),
+        time: row.time.split(':').slice(0, 2).join(':'), // Format time as HH:mm
         dateObj: new Date(row.date)
       }))
       .sort((a, b) => a.dateObj - b.dateObj);
@@ -120,32 +57,6 @@ const WeightTracker = () => {
       }));
     }
     return processedData;
-  };
-
-  const processCSV = (results) => {
-    try {
-      const hasAllColumns = results.data.every(row => 
-        row.date && row.weight && row.fat_percentage && row.bmi
-      );
-      if (!hasAllColumns) {
-        setError('CSV is missing required columns');
-        return;
-      }
-      
-      // Extract unique sources
-      const sources = [...new Set(results.data.map(row => row.source))];
-      setAvailableSources(sources);
-      setSelectedSources(new Set(sources)); // Initially select all sources
-      
-      const filtered = results.data;  // Initially all data is filtered
-      const processed = processDataWithNormalization(results.data, normalize, filtered);
-      setOriginalData(results.data);
-      setFitnessData(processed);
-      setShowGraphs(false);
-    } catch (err) {
-      setError('Error loading CSV: ' + err.message);
-      console.error(err);
-    }
   };
 
   const generateGraphs = () => {
@@ -191,35 +102,12 @@ const WeightTracker = () => {
       
       {!fitnessData.length > 0 ? (
         <div className="data-source-selection">
-          <form onSubmit={handleUrlSubmit} className="csv-uploader">
-            <input 
-              type="text" 
-              value={googleSheetsUrl}
-              onChange={(e) => setGoogleSheetsUrl(e.target.value)}
-              placeholder="Enter Google Sheets Published CSV URL"
-              className="url-input"
-            />
-            <button type="submit" className="submit-button">
-              Load CSV
-            </button>
-          </form>
-          
-          <div className="predefined-sources">
-            {Object.entries(PREDEFINED_SOURCES).map(([key, source]) => (
-              <button
-                key={key}
-                onClick={() => loadPredefinedSource(key)}
-                className="source-button"
-              >
-                {source.name}
-              </button>
-            ))}
-          </div>
+          <DataImporter onDataLoaded={handleDataLoaded} />
         </div>
       ) : (
         <div className="data-actions">
-          <button onClick={clearData} className="clear-button">
-            Clear Data {loadedSource ? `(${loadedSource})` : ''}
+          <button onClick={() => handleDataLoaded(null)} className="clear-button">
+            Clear Data
           </button>
           <button 
             className="generate-graphs-button" 
@@ -360,6 +248,7 @@ const WeightTracker = () => {
             <thead>
               <tr>
                 <th>Date</th>
+                <th>Time</th>
                 <th>Weight</th>
                 <th>Fat %</th>
                 <th>BMI</th>
@@ -370,6 +259,7 @@ const WeightTracker = () => {
               {(isTableExpanded ? [...filteredData].reverse() : [filteredData[filteredData.length - 1]]).map((entry, index) => (
                 <tr key={index}>
                   <td>{entry.date}</td>
+                  <td>{entry.time}</td>
                   <td>{entry.weight}</td>
                   <td>{entry.fat_percentage}</td>
                   <td>{entry.bmi}</td>
@@ -378,7 +268,7 @@ const WeightTracker = () => {
               ))}
               {!isTableExpanded && filteredData.length > 1 && (
                 <tr className="table-indicator">
-                  <td colSpan="5">...</td>
+                  <td colSpan="6">...</td>
                 </tr>
               )}
             </tbody>
