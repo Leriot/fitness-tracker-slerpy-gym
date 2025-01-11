@@ -3,6 +3,14 @@ import Papa from 'papaparse';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import './App.css'; // Import the CSS file for dark mode
 
+const PREDEFINED_SOURCES = {
+  lerito: {
+    name: "Lerito",
+    url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vThTzKmTRk3F8icHWCdKa4sBRyBR1yixAt8lfgxoU6YJYCgxvmDCZc3oqdJjM7e3kyUU0TGKofPMAb1/pub?output=csv"
+  }
+  // Add more sources here as needed
+};
+
 const App = () => {
   // Add new state for original data
   const [originalData, setOriginalData] = useState([]);
@@ -16,6 +24,44 @@ const App = () => {
   const [selectedSources, setSelectedSources] = useState(new Set());
   const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
+  const [loadedSource, setLoadedSource] = useState(null);
+
+  const clearData = () => {
+    setOriginalData([]);
+    setFitnessData([]);
+    setShowGraphs(false);
+    setError(null);
+    setLoadedSource(null);
+    setGoogleSheetsUrl('');
+  };
+
+  const loadPredefinedSource = async (sourceKey) => {
+    const source = PREDEFINED_SOURCES[sourceKey];
+    if (!source) return;
+    
+    try {
+      const response = await fetch(source.url);
+      if (!response.ok) throw new Error('Failed to fetch CSV');
+      
+      const csvText = await response.text();
+      Papa.parse(csvText, {
+        header: true,
+        dynamicTyping: true,
+        complete: (results) => {
+          if (results.errors.length > 0) {
+            setError('Error parsing CSV');
+            console.error(results.errors);
+            return;
+          }
+          setLoadedSource(source.name);
+          processCSV(results);
+        }
+      });
+    } catch (err) {
+      setError('Error loading CSV: ' + err.message);
+      console.error(err);
+    }
+  };
 
   const handleUrlSubmit = async (e) => {
     e.preventDefault();
@@ -141,26 +187,40 @@ const App = () => {
 
   return (
     <div className="App dark-mode">
-      <h1>Fitness Progress Tracker</h1>
+      <h1>Weight Data Tracker</h1>
       
-      {/* Form and buttons remain at top */}
-      <form onSubmit={handleUrlSubmit} className="csv-uploader">
-        <input 
-          type="text" 
-          value={googleSheetsUrl}
-          onChange={(e) => setGoogleSheetsUrl(e.target.value)}
-          placeholder="Enter Google Sheets Published CSV URL"
-          className="url-input"
-        />
-        <button type="submit" className="submit-button">
-          Load CSV
-        </button>
-      </form>
-      
-      {error && <p className="error-message">{error}</p>}
-      
-      {fitnessData.length > 0 && (
+      {!fitnessData.length > 0 ? (
+        <div className="data-source-selection">
+          <form onSubmit={handleUrlSubmit} className="csv-uploader">
+            <input 
+              type="text" 
+              value={googleSheetsUrl}
+              onChange={(e) => setGoogleSheetsUrl(e.target.value)}
+              placeholder="Enter Google Sheets Published CSV URL"
+              className="url-input"
+            />
+            <button type="submit" className="submit-button">
+              Load CSV
+            </button>
+          </form>
+          
+          <div className="predefined-sources">
+            {Object.entries(PREDEFINED_SOURCES).map(([key, source]) => (
+              <button
+                key={key}
+                onClick={() => loadPredefinedSource(key)}
+                className="source-button"
+              >
+                {source.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
         <div className="data-actions">
+          <button onClick={clearData} className="clear-button">
+            Clear Data {loadedSource ? `(${loadedSource})` : ''}
+          </button>
           <button 
             className="generate-graphs-button" 
             onClick={generateGraphs}
@@ -194,6 +254,8 @@ const App = () => {
           </button>
         </div>
       )}
+      
+      {error && <p className="error-message">{error}</p>}
       
       {showGraphs && (
         <div className="graph-container">
