@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import DataImporter from '../DataImporter/DataImporter';
+import DataGraph from './DataGraph';
+import TrendGraph from './TrendGraph';
 import './WeightTracker.css';
 
 const WeightTracker = () => {
@@ -13,6 +15,12 @@ const WeightTracker = () => {
   const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
   const [error, setError] = useState(null);
+  const [estimatedDate, setEstimatedDate] = useState(null);
+
+  // Move filteredData declaration here
+  const filteredData = fitnessData.filter(data => 
+    selectedSources.has(data.source)
+  );
 
   const handleDataLoaded = (data) => {
     if (!data) {
@@ -59,26 +67,88 @@ const WeightTracker = () => {
     return processedData;
   };
 
+  const calculateTrendline = (data) => {
+    const n = data.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    
+    data.forEach((point, index) => {
+      const x = index;
+      const y = point.weight;
+      sumX += x;
+      sumY += y;
+      sumXY += x * y;
+      sumXX += x * x;
+    });
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    
+    // Calculate days until target weight
+    const currentWeight = data[data.length - 1].weight;
+    const targetWeight = 64;
+    const daysToTarget = (targetWeight - currentWeight) / slope;
+    
+    const lastDate = new Date(data[data.length - 1].dateObj);
+    const targetDate = new Date(lastDate.setDate(lastDate.getDate() + daysToTarget));
+    
+    return {
+      targetDate,
+      slope,
+      intercept
+    };
+  };
+
+  const processDataWithTrendline = (data) => {
+    if (!data || data.length < 2) return data;
+
+    const { targetDate, slope, intercept } = calculateTrendline(data);
+    setEstimatedDate(targetDate);
+
+    // Add 3 empty points between last real data and prediction
+    const lastDate = new Date(data[data.length - 1].dateObj);
+    const daysBetween = (targetDate - lastDate) / (4 * 86400000); // 4 segments
+
+    const trendData = [...data];
+    for (let i = 1; i <= 3; i++) {
+      const emptyDate = new Date(lastDate.getTime() + (daysBetween * i * 86400000));
+      trendData.push({
+        date: emptyDate.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: '2-digit'
+        }),
+        dateObj: emptyDate,
+        isTrendpoint: true
+      });
+    }
+
+    // Add target point
+    trendData.push({
+      date: targetDate.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: '2-digit'
+      }),
+      dateObj: targetDate,
+      weight: 64,
+      isTrendpoint: true
+    });
+
+    return trendData;
+  };
+
   const generateGraphs = () => {
     setShowGraphs(true);
   };
 
   const handleSourceToggle = (source) => {
-    const newSources = new Set(selectedSources);
-    if (newSources.has(source)) {
-      newSources.delete(source);
-    } else {
-      newSources.add(source);
-    }
-    
-    // Filter data with new sources before processing
-    const filtered = originalData.filter(data => 
-      newSources.has(data.source)
-    );
-    const processed = processDataWithNormalization(originalData, normalize, filtered);
-    
-    setSelectedSources(newSources);
-    setFitnessData(processed);
+    setSelectedSources(prev => {
+      const newSources = new Set(prev);
+      if (newSources.has(source)) {
+        newSources.delete(source);
+      } else {
+        newSources.add(source);
+      }
+      return newSources;
+    });
   };
 
   const handleNormalizeToggle = () => {
@@ -92,12 +162,31 @@ const WeightTracker = () => {
     setFitnessData(processed);
   };
 
-  const filteredData = fitnessData.filter(data => 
-    selectedSources.has(data.source)
-  );
+  useEffect(() => {
+    if (originalData.length > 0) {
+      const filtered = originalData.filter(data => 
+        selectedSources.has(data.source)
+      );
+      const processed = processDataWithNormalization(originalData, normalize, filtered);
+      setFitnessData(processed);
+    }
+  }, [originalData, selectedSources, normalize]);
+
+  const trendlineData = useMemo(() => {
+    if (!filteredData || filteredData.length < 2) return null;
+    
+    const { targetDate, slope, intercept } = calculateTrendline(filteredData);
+    return { targetDate, slope, intercept };
+  }, [filteredData]);
+
+  useEffect(() => {
+    if (trendlineData) {
+      setEstimatedDate(trendlineData.targetDate);
+    }
+  }, [trendlineData]);
 
   return (
-    <div className="App dark-mode">
+    <div className="weight-tracker">
       <h1>Weight Data Tracker</h1>
       
       {!fitnessData.length > 0 ? (
@@ -146,85 +235,10 @@ const WeightTracker = () => {
       {error && <p className="error-message">{error}</p>}
       
       {showGraphs && (
-        <div className="graph-container">
-          <h2>Data Preview</h2>
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart
-              data={filteredData}
-              margin={{
-                top: 20,
-                right: 50,
-                left: 30,
-                bottom: 50
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-              <XAxis
-                dataKey="date"
-                angle={-90}
-                textAnchor="end"
-                height={60}
-                tick={{ dy: 30, fill: '#ffffff' }}
-              />
-              <YAxis
-                yAxisId="weight"
-                orientation="left"
-                stroke="#8884d8"
-                tick={{ fill: '#ffffff' }}
-              />
-              <YAxis
-                yAxisId="metrics"
-                orientation="right"
-                domain={[10, 30]}
-                stroke="#82ca9d"
-                tick={{ fill: '#ffffff' }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#333333',
-                  border: 'none',
-                  borderRadius: '4px',
-                  color: '#ffffff'
-                }}
-              />
-              <Legend 
-                verticalAlign="top"
-                height={36}
-                wrapperStyle={{
-                  color: '#ffffff',
-                  paddingTop: '10px'
-                }}
-              />
-              <Line
-                yAxisId="weight"
-                type="monotone"
-                dataKey="weight"
-                stroke="#8884d8"
-                strokeWidth={2}
-                dot={{ fill: '#8884d8' }}
-                name="Weight"
-              />
-              <Line
-                yAxisId="metrics"
-                type="monotone"
-                dataKey="fat_percentage"
-                stroke="#82ca9d"
-                strokeWidth={2}
-                dot={{ fill: '#82ca9d' }}
-                name="Body Fat %"
-              />
-              <Line
-                yAxisId="metrics"
-                type="monotone"
-                dataKey="bmi"
-                stroke="#ffc658"
-                strokeWidth={2}
-                dot={{ fill: '#ffc658' }}
-                name="BMI"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <DataGraph data={filteredData} />
+          <TrendGraph data={filteredData} />
+        </>
       )}
       
       {/* Table moved below graph */}
@@ -256,7 +270,7 @@ const WeightTracker = () => {
               </tr>
             </thead>
             <tbody>
-              {(isTableExpanded ? [...filteredData].reverse() : [filteredData[filteredData.length - 1]]).map((entry, index) => (
+              {(isTableExpanded ? [...filteredData].reverse() : filteredData.length ? [filteredData[filteredData.length - 1]] : []).map((entry, index) => (
                 <tr key={index}>
                   <td>{entry.date}</td>
                   <td>{entry.time}</td>
