@@ -1,45 +1,95 @@
 import React, { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
+const calculateConfidenceMultiplier = (sampleSize) => {
+  // Base multiplier of 2 (95% confidence interval)
+  // Adjust based on sample size
+  if (sampleSize < 5) return 4.0;      // Very small dataset
+  if (sampleSize < 10) return 3.0;     // Small dataset
+  if (sampleSize < 20) return 2.5;     // Medium dataset
+  if (sampleSize < 30) return 2.0;     // Large dataset
+  return 1.8;                          // Very large dataset
+};
+
+const calculateLinearRegression = (data) => {
+  const n = data.length;
+  if (n < 2) return null;
+
+  // Convert dates to days since first entry
+  const firstDate = new Date(data[0].dateObj);
+  const daysArray = data.map(point => {
+    const currentDate = new Date(point.dateObj);
+    return (currentDate - firstDate) / (24 * 60 * 60 * 1000); // Convert to days
+  });
+
+  // Calculate means using actual days
+  const xMean = daysArray.reduce((sum, days) => sum + days, 0) / n;
+  const yMean = data.reduce((sum, point) => sum + point.weight, 0) / n;
+
+  // Calculate sums for least squares using actual time intervals
+  let sumXY = 0, sumXX = 0;
+  data.forEach((point, index) => {
+    const xDiff = daysArray[index] - xMean;
+    const yDiff = point.weight - yMean;
+    sumXY += xDiff * yDiff;
+    sumXX += xDiff * xDiff;
+  });
+
+  // Prevent division by zero
+  if (sumXX === 0) return null;
+
+  // Calculate slope (weight change per day) and intercept
+  const slope = sumXY / sumXX;
+  const intercept = yMean - (slope * xMean);
+
+  return { 
+    slope, 
+    intercept,
+    daysArray,
+    firstDate,
+    sumXX,
+    xMean 
+  };
+};
+
+const calculateDeviationParams = (data, regression) => {
+  const { slope, intercept, daysArray, xMean } = regression;
+  const n = data.length;
+
+  // Calculate residuals using actual days
+  const residuals = data.map((point, index) => {
+    const predicted = slope * daysArray[index] + intercept;
+    return point.weight - predicted;
+  });
+  
+  const variance = residuals.reduce((sum, r) => sum + r * r, 0) / (n - 2);
+  const stdDev = Math.sqrt(variance);
+
+  return { n, stdDev };
+};
+
 const TrendGraph = ({ data }) => {
   const { combinedData, estimatedDate } = useMemo(() => {
     if (!data || data.length < 2) return { combinedData: [], estimatedDate: null };
 
-    // Calculate main trend
-    const n = data.length;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-    
-    data.forEach((point, index) => {
-      const x = index;
-      const y = point.weight;
-      sumX += x;
-      sumY += y;
-      sumXY += x * y;
-      sumXX += x * x;
-    });
+    const regression = calculateLinearRegression(data);
+    if (!regression) return { combinedData: [], estimatedDate: null };
 
-    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-
-    // Calculate standard deviation from trend line
-    const residuals = data.map((point, index) => {
-      const predicted = slope * index + intercept;
-      return point.weight - predicted;
-    });
-    
-    const variance = residuals.reduce((sum, r) => sum + r * r, 0) / (n - 2);
-    const stdDev = Math.sqrt(variance);
+    const { slope, intercept, daysArray, firstDate, sumXX, xMean } = regression;
+    const { n, stdDev } = calculateDeviationParams(data, regression);
+    const confidenceMultiplier = calculateConfidenceMultiplier(n);
 
     // Start trends from last real point
     const lastPoint = data[data.length - 1];
     const lastWeight = lastPoint.weight;
     const targetWeight = 64;
-    
-    const daysToTarget = Math.abs((targetWeight - lastWeight) / slope);
     const lastDate = new Date(lastPoint.dateObj);
+    
+    // Calculate days until target based on trend line
+    const daysToTarget = Math.abs((targetWeight - lastWeight) / slope);
     const targetDate = new Date(lastDate.getTime() + (daysToTarget * 24 * 60 * 60 * 1000));
 
-    // Create future points with bounds
+    // Create future points
     const futurePoints = [];
     const pointCount = 4;
     const dayInterval = daysToTarget / pointCount;
@@ -47,8 +97,9 @@ const TrendGraph = ({ data }) => {
 
     for (let i = 1; i <= pointCount; i++) {
       const futureDate = new Date(lastDate.getTime() + (i * dayInterval * 24 * 60 * 60 * 1000));
-      const projectedWeight = lastWeight + (slope * i * dayInterval);
-      const deviation = stdDev * Math.sqrt(1 + 1/n + Math.pow(i - n/2, 2)/(n * sumXX));
+      const projectedWeight = Number((lastWeight + (slope * i * dayInterval)).toFixed(1));
+      const timeUncertainty = 1 + (i / pointCount) * 0.5;
+      const deviation = stdDev * Math.sqrt(1 + 1/n + Math.pow(i * dayInterval - n/2, 2)/(n * sumXX)) * timeUncertainty;
       
       futurePoints.push({
         date: i === pointCount ? 
@@ -57,18 +108,24 @@ const TrendGraph = ({ data }) => {
         dateObj: futureDate,
         weight: null,
         trendWeight: projectedWeight,
-        upperBound: projectedWeight + 2 * deviation,
-        lowerBound: projectedWeight - 2 * deviation,
+        upperBound: Number((projectedWeight + confidenceMultiplier * deviation).toFixed(1)),
+        lowerBound: Number((projectedWeight - confidenceMultiplier * deviation).toFixed(1)),
         isTrendpoint: true
       });
+    }
+
+    // Ensure last point hits target weight
+    if (futurePoints.length > 0) {
+      futurePoints[futurePoints.length - 1].trendWeight = targetWeight;
     }
 
     const combinedData = [
       ...data.map(d => ({
         ...d,
-        trendWeight: d === lastPoint ? d.weight : null,
-        upperBound: d === lastPoint ? d.weight : null,
-        lowerBound: d === lastPoint ? d.weight : null
+        weight: Number(d.weight.toFixed(1)),
+        trendWeight: d === lastPoint ? Number(d.weight.toFixed(1)) : null,
+        upperBound: d === lastPoint ? Number(d.weight.toFixed(1)) : null,
+        lowerBound: d === lastPoint ? Number(d.weight.toFixed(1)) : null
       })),
       ...futurePoints
     ];
