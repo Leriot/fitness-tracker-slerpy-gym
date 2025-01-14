@@ -1,106 +1,142 @@
 import React, { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import _ from 'lodash';
 
-const calculateConfidenceMultiplier = (sampleSize) => {
-  // Base multiplier of 2 (95% confidence interval)
-  // Adjust based on sample size
-  if (sampleSize < 5) return 4.0;      // Very small dataset
-  if (sampleSize < 10) return 3.0;     // Small dataset
-  if (sampleSize < 20) return 2.5;     // Medium dataset
-  if (sampleSize < 30) return 2.0;     // Large dataset
-  return 1.8;                          // Very large dataset
+// T-distribution critical values for 95% confidence level
+const T_TABLE = {
+  1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+  6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+  15: 2.131, 20: 2.086, 30: 2.042, 60: 2.000, Infinity: 1.960
+};
+
+const calculateTValue = (degreesOfFreedom) => {
+  const dfs = Object.keys(T_TABLE).map(Number);
+  const closestDf = dfs.reduce((prev, curr) => 
+    Math.abs(curr - degreesOfFreedom) < Math.abs(prev - degreesOfFreedom) ? curr : prev
+  );
+  return T_TABLE[closestDf];
 };
 
 const calculateLinearRegression = (data) => {
-  const n = data.length;
-  if (n < 2) return null;
+  if (!data || data.length < 2) return null;
 
-  // Convert dates to days since first entry
-  const firstDate = new Date(data[0].dateObj);
-  const daysArray = data.map(point => {
-    const currentDate = new Date(point.dateObj);
-    return (currentDate - firstDate) / (24 * 60 * 60 * 1000); // Convert to days
-  });
+  try {
+    // Convert dates to days since first entry
+    const firstDate = new Date(data[0].dateObj);
+    const daysArray = data.map(point => {
+      const currentDate = new Date(point.dateObj);
+      return (currentDate - firstDate) / (24 * 60 * 60 * 1000);
+    });
 
-  // Calculate means using actual days
-  const xMean = daysArray.reduce((sum, days) => sum + days, 0) / n;
-  const yMean = data.reduce((sum, point) => sum + point.weight, 0) / n;
+    const n = data.length;
+    const weights = data.map(point => point.weight);
 
-  // Calculate sums for least squares using actual time intervals
-  let sumXY = 0, sumXX = 0;
-  data.forEach((point, index) => {
-    const xDiff = daysArray[index] - xMean;
-    const yDiff = point.weight - yMean;
-    sumXY += xDiff * yDiff;
-    sumXX += xDiff * xDiff;
-  });
+    // Check for data validity
+    if (daysArray.some(isNaN) || weights.some(w => !isFinite(w))) {
+      throw new Error('Invalid data points detected');
+    }
 
-  // Prevent division by zero
-  if (sumXX === 0) return null;
+    // Calculate means
+    const xMean = _.mean(daysArray);
+    const yMean = _.mean(weights);
 
-  // Calculate slope (weight change per day) and intercept
-  const slope = sumXY / sumXX;
-  const intercept = yMean - (slope * xMean);
+    // Calculate regression parameters
+    const sumXY = _.sum(daysArray.map((x, i) => (x - xMean) * (weights[i] - yMean)));
+    const sumXX = _.sum(daysArray.map(x => Math.pow(x - xMean, 2)));
 
-  return { 
-    slope, 
-    intercept,
-    daysArray,
-    firstDate,
-    sumXX,
-    xMean 
-  };
+    if (sumXX === 0) {
+      throw new Error('No variation in x values');
+    }
+
+    const slope = sumXY / sumXX;
+    const intercept = yMean - (slope * xMean);
+
+    // Calculate R-squared
+    const predictions = daysArray.map(x => slope * x + intercept);
+    const residuals = weights.map((y, i) => y - predictions[i]);
+    const totalSS = _.sum(weights.map(y => Math.pow(y - yMean, 2)));
+    const residualSS = _.sum(residuals.map(r => r * r));
+    const rSquared = 1 - (residualSS / totalSS);
+
+    return {
+      slope,
+      intercept,
+      daysArray,
+      firstDate,
+      sumXX,
+      xMean,
+      residuals,
+      rSquared,
+      n
+    };
+  } catch (error) {
+    console.error('Error in regression calculation:', error);
+    return null;
+  }
 };
 
-const calculateDeviationParams = (data, regression) => {
-  const { slope, intercept, daysArray, xMean } = regression;
-  const n = data.length;
+const calculateDeviationParams = (regression) => {
+  if (!regression) return null;
+  const { residuals, n } = regression;
 
-  // Calculate residuals using actual days
-  const residuals = data.map((point, index) => {
-    const predicted = slope * daysArray[index] + intercept;
-    return point.weight - predicted;
-  });
+  // Calculate standard error of regression
+  const degreesOfFreedom = n - 2;
+  const residualSS = _.sum(residuals.map(r => r * r));
+  const standardError = Math.sqrt(residualSS / degreesOfFreedom);
   
-  const variance = residuals.reduce((sum, r) => sum + r * r, 0) / (n - 2);
-  const stdDev = Math.sqrt(variance);
+  // Get t-value for confidence intervals
+  const tValue = calculateTValue(degreesOfFreedom);
 
-  return { n, stdDev };
+  return { standardError, tValue, degreesOfFreedom };
 };
 
-const TrendGraph = ({ data }) => {
-  const { combinedData, estimatedDate } = useMemo(() => {
-    if (!data || data.length < 2) return { combinedData: [], estimatedDate: null };
+const TrendGraph = ({ data, targetWeight = 64 }) => {
+  const { combinedData, estimatedDate, regressionStats } = useMemo(() => {
+    if (!data || data.length < 2) {
+      return { combinedData: [], estimatedDate: null, regressionStats: null };
+    }
 
+    // Calculate regression
     const regression = calculateLinearRegression(data);
-    if (!regression) return { combinedData: [], estimatedDate: null };
+    if (!regression) {
+      return { combinedData: [], estimatedDate: null, regressionStats: null };
+    }
 
-    const { slope, intercept, daysArray, firstDate, sumXX, xMean } = regression;
-    const { n, stdDev } = calculateDeviationParams(data, regression);
-    const confidenceMultiplier = calculateConfidenceMultiplier(n);
+    const { slope, intercept, daysArray, firstDate, sumXX, n, rSquared } = regression;
+    const deviationParams = calculateDeviationParams(regression);
+    if (!deviationParams) {
+      return { combinedData: [], estimatedDate: null, regressionStats: null };
+    }
+
+    const { standardError, tValue } = deviationParams;
 
     // Start trends from last real point
     const lastPoint = data[data.length - 1];
     const lastWeight = lastPoint.weight;
-    const targetWeight = 64;
     const lastDate = new Date(lastPoint.dateObj);
-    
-    // Calculate days until target based on trend line
-    const daysToTarget = Math.abs((targetWeight - lastWeight) / slope);
-    const targetDate = new Date(lastDate.getTime() + (daysToTarget * 24 * 60 * 60 * 1000));
 
-    // Create future points
+    // Calculate days until target
+    const daysToTarget = (targetWeight - lastWeight) / slope;
+    const targetDate = new Date(lastDate.getTime() + (daysToTarget * 24 * 60 * 60 * 1000));
+    
+    // Create future points for trend projection
     const futurePoints = [];
     const pointCount = 4;
-    const dayInterval = daysToTarget / pointCount;
+    const dayInterval = Math.abs(daysToTarget / pointCount);
     const weeksInterval = Math.round(dayInterval / 7);
 
     for (let i = 1; i <= pointCount; i++) {
       const futureDate = new Date(lastDate.getTime() + (i * dayInterval * 24 * 60 * 60 * 1000));
+      const daysFromStart = (futureDate - firstDate) / (24 * 60 * 60 * 1000);
       const projectedWeight = Number((lastWeight + (slope * i * dayInterval)).toFixed(1));
-      const timeUncertainty = 1 + (i / pointCount) * 0.5;
-      const deviation = stdDev * Math.sqrt(1 + 1/n + Math.pow(i * dayInterval - n/2, 2)/(n * sumXX)) * timeUncertainty;
-      
+
+      // Calculate prediction interval
+      const xDiff = daysFromStart - _.mean(daysArray);
+      const predictionVariance = Math.pow(standardError, 2) * (
+        1 + 1/n + Math.pow(xDiff, 2)/(n * sumXX)
+      );
+      const predictionInterval = tValue * Math.sqrt(predictionVariance);
+
       futurePoints.push({
         date: i === pointCount ? 
           futureDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) :
@@ -108,17 +144,13 @@ const TrendGraph = ({ data }) => {
         dateObj: futureDate,
         weight: null,
         trendWeight: projectedWeight,
-        upperBound: Number((projectedWeight + confidenceMultiplier * deviation).toFixed(1)),
-        lowerBound: Number((projectedWeight - confidenceMultiplier * deviation).toFixed(1)),
+        upperBound: Number((projectedWeight + predictionInterval).toFixed(1)),
+        lowerBound: Number((projectedWeight - predictionInterval).toFixed(1)),
         isTrendpoint: true
       });
     }
 
-    // Ensure last point hits target weight
-    if (futurePoints.length > 0) {
-      futurePoints[futurePoints.length - 1].trendWeight = targetWeight;
-    }
-
+    // Combine historical data with projections
     const combinedData = [
       ...data.map(d => ({
         ...d,
@@ -130,19 +162,54 @@ const TrendGraph = ({ data }) => {
       ...futurePoints
     ];
 
-    return { combinedData, estimatedDate: targetDate };
-  }, [data]);
+    return { 
+      combinedData, 
+      estimatedDate: targetDate,
+      regressionStats: {
+        rSquared,
+        slope: slope * 7, // Convert to weekly rate
+        daysToTarget: Math.abs(daysToTarget)
+      }
+    };
+  }, [data, targetWeight]);
+
+  if (!combinedData.length) {
+    return <div>Insufficient data for trend analysis</div>;
+  }
+
+  // Calculate y-axis domain
+  const allWeights = combinedData.flatMap(d => [
+    d.weight,
+    d.trendWeight,
+    d.upperBound,
+    d.lowerBound
+  ]).filter(Boolean);
+  
+  const minWeight = Math.floor(Math.min(...allWeights));
+  const maxWeight = Math.ceil(Math.max(...allWeights));
+  const padding = 1; // 1kg padding
 
   return (
     <div className="graph-container">
       <h2>Weight Trend Analysis</h2>
-      {estimatedDate && (
+      {estimatedDate && regressionStats && (
         <div className="estimate-info">
-          Estimated date to reach 64kg: {estimatedDate.toLocaleDateString('en-GB')}
+          <p>
+            Estimated date to reach {targetWeight}kg: {estimatedDate.toLocaleDateString('en-GB')}
+            <br />
+            Weekly rate of change: {regressionStats.slope.toFixed(2)}kg
+            <br />
+            Estimated days remaining: {Math.ceil(regressionStats.daysToTarget)}
+            <br />
+            R² (model fit): {regressionStats.rSquared.toFixed(3)}
+          </p>
         </div>
       )}
       <ResponsiveContainer width="100%" height={400}>
-        <LineChart data={combinedData} margin={{ top: 30, right: 50, left: 30, bottom: 50 }}>
+        <LineChart 
+          data={combinedData} 
+          margin={{ top: 30, right: 50, left: 30, bottom: 50 }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
           <XAxis
             dataKey="date"
@@ -152,8 +219,9 @@ const TrendGraph = ({ data }) => {
             tick={{ dy: 30, fill: '#ffffff' }}
           />
           <YAxis
-            domain={[60, 80]}
+            domain={[minWeight - padding, maxWeight + padding]}
             tick={{ fill: '#ffffff' }}
+            tickCount={maxWeight - minWeight + 3}
           />
           <Tooltip
             contentStyle={{
@@ -164,7 +232,7 @@ const TrendGraph = ({ data }) => {
             }}
           />
           <Legend 
-            verticalAlign="top"
+            verticalAlign="top" 
             height={36}
             wrapperStyle={{
               paddingTop: '10px',
@@ -172,6 +240,7 @@ const TrendGraph = ({ data }) => {
               color: '#ffffff'
             }}
           />
+          {/* Actual weight line */}
           <Line
             type="monotone"
             dataKey="weight"
@@ -181,6 +250,7 @@ const TrendGraph = ({ data }) => {
             name="Weight"
             connectNulls={false}
           />
+          {/* Trend line */}
           <Line
             type="monotone"
             dataKey="trendWeight"
@@ -191,6 +261,7 @@ const TrendGraph = ({ data }) => {
             name="Trend"
             connectNulls={true}
           />
+          {/* Prediction intervals */}
           <Line
             type="monotone"
             dataKey="upperBound"
