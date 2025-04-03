@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import Papa from 'papaparse';
-import './DataImporter.css'; // Make sure you have styles for loading/button states
 
 const PREDEFINED_SOURCES = {
   lerito: {

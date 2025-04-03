@@ -273,16 +273,6 @@ td {
     border-color: #ffcc80;
 }
 
-/* ResponsiveContainer adjustments might be needed based on layout */
-.recharts-responsive-container {
-    /* Add specific styles if needed */
-}
-
-/* You might need styles for DataImporter as well */
-/* .csv-uploader { ... } */
-/* .url-input { ... } */
-/* .submit-button { ... } */
-
 .weight-change-summary {
   text-align: center;
   margin-top: -15px; /* Pulls it up slightly below the H1 */
