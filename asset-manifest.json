@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "/fitness-tracker-slerpy-gym/static/css/main.12163411.css",
-    "main.js": "/fitness-tracker-slerpy-gym/static/js/main.e68b63da.js",
+    "main.css": "/fitness-tracker-slerpy-gym/static/css/main.37129fc7.css",
+    "main.js": "/fitness-tracker-slerpy-gym/static/js/main.30132fea.js",
     "index.html": "/fitness-tracker-slerpy-gym/index.html",
-    "main.12163411.css.map": "/fitness-tracker-slerpy-gym/static/css/main.12163411.css.map",
-    "main.e68b63da.js.map": "/fitness-tracker-slerpy-gym/static/js/main.e68b63da.js.map"
+    "main.37129fc7.css.map": "/fitness-tracker-slerpy-gym/static/css/main.37129fc7.css.map",
+    "main.30132fea.js.map": "/fitness-tracker-slerpy-gym/static/js/main.30132fea.js.map"
   },
   "entrypoints": [
-    "static/css/main.12163411.css",
-    "static/js/main.e68b63da.js"
+    "static/css/main.37129fc7.css",
+    "static/js/main.30132fea.js"
   ]
 }
