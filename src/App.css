@@ -1,284 +1,370 @@
-/* General Body/App Styles (Example) */
+/* ═══════════════════════════════════════════════════════════════════════
+   Lerito Weight Tracker — 2026 Dark Mode
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg-base:      #0a0a0f;
+  --bg-surface:   #0f0f1a;
+  --bg-card:      #13131f;
+  --bg-control:   #1a1a28;
+  --bg-input:     #1e1e2e;
+  --border:       #2a2a3a;
+  --border-light: #3a3a4a;
+
+  --text-primary:   #e0e0f0;
+  --text-secondary: #8892b0;
+  --text-muted:     #555577;
+
+  --accent-blue:    #64b5f6;
+  --accent-green:   #69f0ae;
+  --accent-purple:  #e040fb;
+  --accent-orange:  #ff9f43;
+  --accent-red:     #ff5252;
+  --accent-teal:    #56ccf2;
+  --accent-indigo:  #7c83fd;
+
+  --shadow-sm:  0 2px 8px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.6);
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+}
+
+/* ── Reset & Base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
 body {
-  background-color: #121212; /* Very dark grey */
-  color: #e0e0e0; /* Light grey text */
-  font-family: sans-serif;
-  margin: 20px;
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(100, 181, 246, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(105, 240, 174, 0.05) 0%, transparent 50%);
+  color: var(--text-primary);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 24px 16px;
+  min-height: 100vh;
 }
 
-h1, h2 {
-  color: #ffffff;
-  text-align: center;
-  margin-bottom: 25px;
-}
+h1, h2, h3 { color: var(--text-primary); }
+h1 { text-align: center; margin-bottom: 28px; font-size: 1.8em; font-weight: 700; letter-spacing: -0.5px; }
+h2 { font-size: 1.1em; font-weight: 600; }
 
-/* Weight Tracker Container */
+/* ── App Container ─────────────────────────────────────────────────────── */
 .weight-tracker {
-  max-width: 1000px;
+  max-width: 1060px;
   margin: 0 auto;
-  padding: 20px;
-  background-color: #1e1e1e; /* Slightly lighter dark grey */
-  border-radius: 8px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  padding: 28px 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
 }
 
-/* Error Message */
-.error-message {
-  color: #ff6b6b; /* Soft red */
-  background-color: rgba(255, 107, 107, 0.1); /* Light red background */
-  border: 1px solid #ff6b6b;
-  padding: 10px 15px;
-  border-radius: 4px;
+/* ── Stat Cards ────────────────────────────────────────────────────────── */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 0 0 24px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
   text-align: center;
-  margin: 15px 0;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
-/* Controls Area */
+.stat-value {
+  font-size: 1.65em;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.stat-unit  { font-size: 0.8em; color: var(--text-secondary); margin-top: 1px; }
+.stat-label { font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.9px; color: var(--text-secondary); margin-top: 6px; }
+.stat-sub   { font-size: 0.72em; color: var(--text-muted); margin-top: 3px; }
+
+/* ── Controls ──────────────────────────────────────────────────────────── */
 .controls {
   display: flex;
-  flex-wrap: wrap; /* Allow wrapping on smaller screens */
-  gap: 15px; /* Spacing between control items */
-  align-items: center; /* Align items vertically */
-  padding: 15px;
-  margin-bottom: 20px;
-  background-color: #2a2a2a; /* Darker background for controls */
-  border-radius: 6px;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  margin-bottom: 22px;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
-.controls label {
+.control-group {
   display: flex;
   align-items: center;
-  gap: 8px; /* Space between label text and input */
-  color: #cccccc;
+  gap: 8px;
 }
 
-.controls input[type="number"],
-.controls input[type="checkbox"] {
-  background-color: #333333;
-  color: #ffffff;
-  border: 1px solid #555555;
-  border-radius: 4px;
-  padding: 8px 10px;
+.control-label {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .controls input[type="number"] {
-    width: 70px; /* Adjust width as needed */
-}
-
-.controls input[type="checkbox"] {
-  accent-color: #64b5f6; /* Color for the checkbox */
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-/* General Button Styling */
-.control-button {
-  padding: 8px 15px;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  width: 72px;
   font-size: 0.95em;
-  background-color: #424242; /* Medium dark grey */
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+.controls input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(100,181,246,0.15);
 }
 
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.control-button {
+  padding: 7px 14px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.88em;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
 .control-button:hover {
-  background-color: #535353; /* Lighter grey on hover */
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  background: var(--border-light);
+  border-color: #555;
 }
-
 .control-button:disabled {
-    background-color: #333;
-    color: #777;
-    cursor: not-allowed;
-    box-shadow: none;
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
-
-/* Specific Button Types */
-.action-button { /* For primary actions like Generate Graphs */
-   background-color: #1e88e5; /* Blue */
+/* Active state — used for time-range buttons */
+.control-button.active {
+  background: rgba(100, 181, 246, 0.18);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  box-shadow: 0 0 8px rgba(100,181,246,0.2);
 }
-.action-button:hover {
-    background-color: #1565c0; /* Darker Blue */
-}
 
-.subtle-button { /* For less prominent actions like Show More/Less */
-    background-color: transparent;
-    color: #90caf9; /* Light blue text */
-    box-shadow: none;
-    padding: 5px 8px;
-    border: 1px solid #424242;
+/* Action button (blue) */
+.action-button {
+  background: rgba(30, 136, 229, 0.9);
+  border-color: transparent;
+  font-weight: 600;
+}
+.action-button:hover { background: rgba(21, 101, 192, 1); }
+
+/* Subtle button */
+.subtle-button {
+  background: transparent;
+  color: var(--accent-blue);
+  border-color: var(--border);
 }
 .subtle-button:hover {
-    background-color: rgba(144, 202, 249, 0.1); /* Very light blue background */
-    border-color: #90caf9;
+  background: rgba(100, 181, 246, 0.08);
+  border-color: var(--accent-blue);
 }
 
-
-/* Source Selection Dropdown */
-.source-selection {
-  position: relative; /* Needed for absolute positioning of the menu */
-  display: inline-block; /* Or flex-item if needed */
+/* Toggle button — 2026 regression */
+.toggle-button { border-color: var(--border-light); }
+.toggle-button.active {
+  background: rgba(105, 240, 174, 0.12);
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+  box-shadow: 0 0 8px rgba(105,240,174,0.2);
 }
 
-.source-menu {
-  position: absolute;
-  top: 100%; /* Position below the button */
-  left: 0;
-  background-color: #333333; /* Dark background */
-  border: 1px solid #555555; /* Border */
-  border-radius: 4px;
-  padding: 10px;
-  margin-top: 5px; /* Small gap */
-  z-index: 100; /* Ensure it's above other elements */
-  min-width: 180px; /* Minimum width */
-  max-height: 200px; /* Max height with scroll */
-  overflow-y: auto; /* Enable scroll if needed */
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+/* Time-range inline buttons */
+.time-range-controls { display: flex; gap: 4px; }
+.time-btn { padding: 5px 10px; font-size: 0.82em; }
+
+/* Refresh button */
+.refresh-button { font-size: 0.88em; }
+
+/* ── Data Importer ─────────────────────────────────────────────────────── */
+.data-importer { margin-bottom: 18px; }
+.loading-message { color: var(--text-secondary); text-align: center; font-size: 0.9em; }
+.importer-error  { margin-top: 0; }
+
+/* ── Error message ─────────────────────────────────────────────────────── */
+.error-message {
+  color: #ff6b6b;
+  background: rgba(255,107,107,0.08);
+  border: 1px solid rgba(255,107,107,0.35);
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  margin: 12px 0;
+  font-size: 0.9em;
 }
 
-.source-menu label {
-  display: block; /* Each item on its own line */
-  padding: 5px 8px;
-  cursor: pointer;
-  border-radius: 3px;
-  color: #e0e0e0;
-  white-space: nowrap; /* Prevent wrapping */
-}
-
-.source-menu label:hover {
-  background-color: #424242; /* Hover effect */
-}
-
-.source-menu input[type="checkbox"] {
-  margin-right: 8px;
-  vertical-align: middle; /* Align checkbox with text */
-}
-
-/* Target Weight specific layout */
-.target-weight-control {
-    display: flex;
-    align-items: center;
-    gap: 10px; /* Space between label/input and button */
-}
-
-
-/* Data Preview Table */
-.data-preview {
-  margin-top: 30px;
-}
+/* ── Data Table ────────────────────────────────────────────────────────── */
+.data-preview { margin-top: 24px; }
 
 .table-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
 }
 .table-header h2 {
-    margin: 0; /* Remove default margin */
-    text-align: left;
+  margin: 0;
+  text-align: left;
+  font-size: 1em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
 }
 
 .table-notice {
-    font-size: 0.9em;
-    color: #aaaaaa;
-    margin-bottom: 10px;
-    text-align: center;
+  font-size: 0.82em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-align: center;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 10px;
-  background-color: #2a2a2a; /* Dark background for table */
-  border-radius: 4px;
-  overflow: hidden; /* Ensures border-radius applies to cells */
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-top: 6px;
 }
+th, td { padding: 9px 14px; text-align: left; font-size: 0.88em; border-bottom: 1px solid var(--border); }
+th { background: var(--bg-control); color: var(--text-secondary); font-weight: 600; text-transform: uppercase; font-size: 0.78em; letter-spacing: 0.6px; }
+tbody tr:hover { background: rgba(255,255,255,0.03); }
+td { color: var(--text-primary); }
+.table-indicator td { text-align: center; color: var(--text-muted); font-style: italic; }
 
-th, td {
-  border-bottom: 1px solid #444444; /* Separator lines */
-  padding: 10px 12px;
-  text-align: left;
-  font-size: 0.9em;
-}
-
-th {
-  background-color: #333333; /* Header background */
-  color: #ffffff;
-  font-weight: bold;
-}
-
-tbody tr:nth-child(even) {
-  background-color: #2f2f2f; /* Slightly different shade for even rows */
-}
-tbody tr:hover {
-    background-color: #3a3a3a; /* Row hover */
-}
-
-td {
-    color: #cccccc; /* Text color for cells */
-}
-
-.table-indicator td {
-    text-align: center;
-    color: #777;
-    font-style: italic;
-}
-
-
-/* Generate Graphs Section */
+/* ── Generate Graphs ───────────────────────────────────────────────────── */
 .generate-graphs-section {
   text-align: center;
-  margin: 30px 0;
+  margin: 28px 0;
 }
+.generate-graphs-section p { color: var(--text-secondary); font-size: 0.85em; margin-top: 8px; }
 
-/* Graph Area */
+/* ── Graphs ────────────────────────────────────────────────────────────── */
 .graphs {
-  margin-top: 30px;
+  margin-top: 28px;
   display: flex;
   flex-direction: column;
-  gap: 30px; /* Space between graphs */
+  gap: 28px;
 }
 
 .graph-container {
-  background-color: #1e1e1e;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-.graph-container h2 {
-    margin-bottom: 15px;
-    text-align: left;
-    border-bottom: 1px solid #444;
-    padding-bottom: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 16px 16px;
+  box-shadow: var(--shadow-sm);
 }
 
+.graph-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+.graph-header h2 { margin: 0; }
+
+/* Badge */
+.badge {
+  font-size: 0.68em;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.badge-2026 {
+  background: rgba(105,240,174,0.12);
+  color: var(--accent-green);
+  border: 1px solid var(--accent-green);
+}
+
+/* ── Estimate Info Banner ──────────────────────────────────────────────── */
 .estimate-info {
-  color: #cccccc;
-  background-color: #2a2a2a;
-  padding: 10px 15px;
-  margin-bottom: 15px;
-  border-radius: 4px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  font-size: 0.9em;
+  color: var(--text-secondary);
   text-align: center;
-  font-size: 0.95em;
-  border: 1px solid #444;
 }
-.estimate-info.warning { /* Specific style for warnings */
-    color: #ffcc80; /* Amber text */
-    background-color: rgba(255, 204, 128, 0.1);
-    border-color: #ffcc80;
+.estimate-info p { margin: 0; line-height: 1.6; }
+.estimate-info.warning {
+  background: rgba(255,204,128,0.06);
+  border-color: rgba(255,204,128,0.35);
+  color: #ffcc80;
+}
+.estimate-info.success {
+  background: rgba(105,240,174,0.06);
+  border-color: rgba(105,240,174,0.35);
+  color: var(--accent-green);
 }
 
+/* ── Recharts custom tooltip ───────────────────────────────────────────── */
+.custom-tooltip {
+  background: rgba(13,13,26,0.92);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.85em;
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-md);
+}
+.custom-tooltip .tt-label {
+  color: var(--text-secondary);
+  font-size: 0.8em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+/* ── Weight change summary ─────────────────────────────────────────────── */
 .weight-change-summary {
   text-align: center;
-  margin-top: -15px; /* Pulls it up slightly below the H1 */
-  margin-bottom: 25px;
-  font-size: 1em; /* Adjust size as needed */
-  color: #00e676; /* Bright green for positive message */
-  /* Consider adding different colors based on gain/loss if desired */
-  /* Example: color: #ffab40; for gain */
+  margin: -12px 0 22px;
+  font-size: 0.95em;
+  color: var(--accent-green);
+}
+
+/* ── Recharts overrides for dark mode ──────────────────────────────────── */
+.recharts-layer.recharts-cartesian-axis-tick text { fill: var(--text-secondary); }
+.recharts-legend-item-text { color: var(--text-secondary) !important; }
+.recharts-brush .recharts-brush-slide { fill: rgba(100,181,246,0.08); }
+.recharts-brush .recharts-brush-traveller rect { fill: var(--accent-blue); }
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  body { padding: 12px 8px; }
+  .weight-tracker { padding: 16px 12px; }
+  .stat-cards { grid-template-columns: repeat(2, 1fr); }
+  .controls { gap: 10px; }
+  .time-range-controls { flex-wrap: wrap; }
 }
