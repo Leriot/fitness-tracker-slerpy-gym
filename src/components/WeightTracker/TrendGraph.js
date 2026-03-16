@@ -1,243 +1,286 @@
 import React, { useMemo, useContext } from 'react';
-// CORRECTED Recharts Import: Include all used components
 import {
-    LineChart,
-    Line,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer, Brush, ReferenceLine
 } from 'recharts';
-import _ from 'lodash';
 import { WeightTrackerContext } from './WeightTracker';
 
-// --- Helper functions (T_TABLE, calculateTValue, etc.) ---
-const T_TABLE = { 1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228, 15: 2.131, 20: 2.086, 30: 2.042, 60: 2.000, Infinity: 1.960 };
-const calculateTValue = (degreesOfFreedom) => {
-    if (degreesOfFreedom <= 0) return T_TABLE[1];
-    const dfs = Object.keys(T_TABLE).map(Number).filter(isFinite);
-    const closestDf = dfs.reduce((prev, curr) =>
-        Math.abs(curr - degreesOfFreedom) < Math.abs(prev - degreesOfFreedom) ? curr : prev
-    );
-    return degreesOfFreedom > 60 ? T_TABLE.Infinity : T_TABLE[closestDf];
+// ── T-table (two-tailed 95%, α=0.05) ─────────────────────────────────────────
+const T_TABLE = {
+  1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+  6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+  15: 2.131, 20: 2.086, 30: 2.042, 60: 2.000
+};
+const T_INF = 1.960;
+const T_DF_KEYS = Object.keys(T_TABLE).map(Number).sort((a, b) => a - b);
+
+/** Linear interpolation through the t-table for better accuracy */
+const calculateTValue = (df) => {
+  if (df <= 0)  return T_TABLE[1];
+  if (df > 60)  return T_INF;
+  // Exact match
+  if (T_TABLE[df] !== undefined) return T_TABLE[df];
+  // Interpolate
+  const lower = T_DF_KEYS.filter(k => k <= df).pop();
+  const upper = T_DF_KEYS.find(k => k > df);
+  if (upper === undefined) return T_TABLE[60];
+  const t = (df - lower) / (upper - lower);
+  return T_TABLE[lower] + t * (T_TABLE[upper] - T_TABLE[lower]);
 };
 
+/**
+ * OLS linear regression.
+ * Returns slope, intercept (and associated stats) expressed in day-units
+ * measured from firstDateMs (the first date in `data`).
+ */
 const calculateLinearRegression = (data) => {
-    if (!data || data.length < 2) {
-        console.log("Regression: Data length < 2");
-        return null;
+  if (!data || data.length < 2) return null;
+  try {
+    const firstDateMs = data[0].dateObj?.getTime();
+    if (!isFinite(firstDateMs)) return null;
+
+    // Only include rows with valid, positive weights
+    const pts = data.map(d => ({
+      x: (d.dateObj.getTime() - firstDateMs) / 86400000,
+      y: d.weight,
+    })).filter(p => isFinite(p.x) && isFinite(p.y) && p.y > 0);
+
+    if (pts.length < 2) return null;
+
+    const n   = pts.length;
+    const xm  = pts.reduce((s, p) => s + p.x, 0) / n;
+    const ym  = pts.reduce((s, p) => s + p.y, 0) / n;
+    const sXY = pts.reduce((s, p) => s + (p.x - xm) * (p.y - ym), 0);
+    const sXX = pts.reduce((s, p) => s + (p.x - xm) ** 2, 0);
+
+    if (sXX === 0) {
+      return { slope: 0, intercept: ym, firstDateMs, xMean: xm, sumXX: 0, n, residuals: pts.map(p => p.y - ym), rSquared: 0 };
     }
-    try {
-        const firstDateMs = data[0].dateObj?.getTime();
-        if (isNaN(firstDateMs)) {
-             console.error("Regression: Invalid first date");
-             return null;
-        }
-        const firstDate = new Date(firstDateMs);
-        const points = data.map(point => {
-            const days = (point.dateObj?.getTime() - firstDateMs) / (24 * 60 * 60 * 1000);
-            const weight = point.weight;
-            return { days, weight };
-        }).filter(p => isFinite(p.days) && isFinite(p.weight));
 
-        if (points.length < 2) {
-            console.log("Regression: Not enough valid numeric points after filtering");
-            return null;
-        }
-        const n = points.length;
-        const daysArray = points.map(p => p.days);
-        const weights = points.map(p => p.weight);
-        const xMean = _.mean(daysArray);
-        const yMean = _.mean(weights);
-        const sumXY = _.sum(daysArray.map((x, i) => (x - xMean) * (weights[i] - yMean)));
-        const sumXX = _.sum(daysArray.map(x => Math.pow(x - xMean, 2)));
+    const slope     = sXY / sXX;
+    const intercept = ym - slope * xm;
+    const preds     = pts.map(p => slope * p.x + intercept);
+    const residuals = pts.map((p, i) => p.y - preds[i]);
+    const RSS       = residuals.reduce((s, r) => s + r * r, 0);
+    const TSS       = pts.reduce((s, p) => s + (p.y - ym) ** 2, 0);
+    const rSquared  = TSS === 0 ? 1 : Math.max(0, 1 - RSS / TSS);
 
-        if (sumXX === 0) {
-            console.log("Regression: No variation in dates (sumXX is 0)");
-            return { slope: 0, intercept: yMean, daysArray, firstDate, sumXX: 0, xMean, residuals: weights.map(w => w - yMean), rSquared: 0, n };
-        }
-        const totalSS = _.sum(weights.map(y => Math.pow(y - yMean, 2)));
-        if (totalSS === 0) {
-            console.log("Regression: No variation in weights (totalSS is 0)");
-             return { slope: 0, intercept: yMean, daysArray, firstDate, sumXX, xMean, residuals: weights.map(w => 0), rSquared: 1, n };
-        }
-        const slope = sumXY / sumXX;
-        const intercept = yMean - (slope * xMean);
-        const predictions = daysArray.map(x => slope * x + intercept);
-        const residuals = weights.map((y, i) => y - predictions[i]);
-        const residualSS = _.sum(residuals.map(r => r * r));
-        const rSquared = totalSS === 0 ? 1 : Math.max(0, 1 - (residualSS / totalSS));
+    // Standard error of regression (SE of residuals)
+    const dof = n - 2;
+    const se  = dof > 0 ? Math.sqrt(RSS / dof) : 0;
+    const t   = dof > 0 ? calculateTValue(dof) : 0;
 
-        return { slope, intercept, daysArray, firstDate, sumXX, xMean, residuals, rSquared, n };
-    } catch (error) {
-        console.error('Error in regression calculation:', error);
-        return null;
-    }
+    return { slope, intercept, firstDateMs, xMean: xm, sumXX: sXX, n, residuals, rSquared, se, t, dof };
+  } catch (err) {
+    console.error('Regression error:', err);
+    return null;
+  }
 };
 
-const calculateDeviationParams = (regression) => {
-    if (!regression || regression.n < 3) {
-         console.log("Deviation Params: Regression invalid or n < 3");
-         return null;
-    }
-    const { residuals, n } = regression;
-    const degreesOfFreedom = n - 2;
-    if (degreesOfFreedom <= 0) {
-        console.log("Deviation Params: Degrees of freedom <= 0");
-        return null;
-    }
-    const residualSS = _.sum(residuals.map(r => r * r));
-    const standardError = Math.sqrt(residualSS / degreesOfFreedom);
-     if (!isFinite(standardError)) {
-         console.error("Deviation Params: Calculated standardError is not finite.", standardError);
-         return null;
-     }
-    const tValue = calculateTValue(degreesOfFreedom);
-    return { standardError, tValue, degreesOfFreedom };
+/** 95% prediction interval half-width at a given daysFromStart */
+const predictionMargin = ({ se, t, n, xMean, sumXX }, daysFromStart) => {
+  if (!se || !t || !sumXX) return 0;
+  const sePred = se * Math.sqrt(1 + 1 / n + (daysFromStart - xMean) ** 2 / sumXX);
+  return isFinite(sePred) ? t * sePred : 0;
 };
 
+// ── Custom tooltip ────────────────────────────────────────────────────────────
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="custom-tooltip">
+      <p className="tt-label">{label}</p>
+      {payload.map(p => p.value != null && (
+        <p key={p.dataKey} style={{ color: p.color, margin: '2px 0' }}>
+          {p.name}: <strong>{p.value} kg</strong>
+        </p>
+      ))}
+    </div>
+  );
+};
 
-const TrendGraph = ({ data }) => {
+// ── TrendGraph ────────────────────────────────────────────────────────────────
+/**
+ * Props:
+ *   data           – all data points to display (weight dots + regression line)
+ *   regressionData – optional subset to compute regression from (e.g. 2026-only);
+ *                    if null/undefined the full `data` array is used
+ */
+const TrendGraph = ({ data, regressionData }) => {
   const { targetWeight } = useContext(WeightTrackerContext);
-  // console.log("TrendGraph Render - Data length:", data?.length, "Target:", targetWeight);
 
-  const { combinedData, estimatedDate, regressionStats, movingAway } = useMemo(() => {
-    // console.log("TrendGraph useMemo start");
+  const { combinedData, estimatedDate, regressionStats, movingAway, using2026 } = useMemo(() => {
+    const empty = { combinedData: [], estimatedDate: null, regressionStats: null, movingAway: false, using2026: false };
+    if (!data || data.length < 2 || !isFinite(targetWeight)) return empty;
 
-    if (!data || data.length < 2 || targetWeight == null || !isFinite(targetWeight)) { return { combinedData: [], estimatedDate: null, regressionStats: null, movingAway: false }; }
-    const regression = calculateLinearRegression(data);
-    if (!regression) { return { combinedData: [], estimatedDate: null, regressionStats: null, movingAway: false }; }
-    const { slope, intercept, daysArray, firstDate, sumXX, xMean, residuals, rSquared, n } = regression; // Destructure all needed vars
-    if (slope === 0) {
-        // Handle flat trend state (as before)
-        const flatLineData = data.map((d) => ({/*...*/})); // Simplified for brevity
-        return { combinedData: flatLineData, estimatedDate: null, regressionStats: { rSquared: rSquared ?? 0, slope: 0, daysToTarget: null }, movingAway: intercept !== targetWeight };
-    }
-    const deviationParams = calculateDeviationParams(regression);
-    const fallbackMode = !deviationParams;
-    const { standardError, tValue } = deviationParams || {};
+    // Use regressionData for the regression calc if provided, otherwise use full data
+    const regSource = regressionData && regressionData.length >= 2 ? regressionData : data;
+    const using2026 = regSource !== data;
 
+    const reg = calculateLinearRegression(regSource);
+    if (!reg) return empty;
 
-    const lastPoint = data[data.length - 1];
-    const lastWeight = lastPoint.weight;
-    const lastDate = new Date(lastPoint.dateObj);
+    const { slope, intercept, firstDateMs, rSquared, se } = reg;
 
-    const daysToTargetRegression = (targetWeight - intercept) / slope;
-    const targetDateRegression = new Date(firstDate.getTime() + (daysToTargetRegression * 24 * 60 * 60 * 1000));
-    const weightDiffToTarget = targetWeight - lastWeight;
-    const isMovingAway = (slope > 0 && weightDiffToTarget < 0) || (slope < 0 && weightDiffToTarget > 0);
-    let estimatedDaysRemaining = null;
-    if (!isMovingAway) {
-         estimatedDaysRemaining = (targetWeight - lastWeight) / slope;
-         if (!isFinite(estimatedDaysRemaining)) estimatedDaysRemaining = null;
-    }
+    // Apply regression to ALL display data points (may extrapolate for pre-2026)
+    const regressionLineData = data.map(d => {
+      const daysFromStart = (d.dateObj.getTime() - firstDateMs) / 86400000;
+      const trend = slope * daysFromStart + intercept;
+      const margin = predictionMargin(reg, daysFromStart);
+      return {
+        ...d,
+        weight:     d.weight > 0 ? +d.weight.toFixed(1) : null,
+        trendWeight: +trend.toFixed(1),
+        upperBound: se > 0 ? +(trend + margin).toFixed(1) : null,
+        lowerBound: se > 0 ? +(trend - margin).toFixed(1) : null,
+      };
+    });
 
-    // --- Projection points ---
+    // ── Projection ────────────────────────────────────────────────────────
+    const lastPoint  = data[data.length - 1];
+    const lastDays   = (lastPoint.dateObj.getTime() - firstDateMs) / 86400000;
+    const daysToTgt  = slope !== 0 ? (targetWeight - intercept) / slope : null;
+    const remaining  = daysToTgt !== null ? daysToTgt - lastDays : null;
+
+    const isMovingAway =
+      (slope < 0 && targetWeight > lastPoint.weight) ||
+      (slope > 0 && targetWeight < lastPoint.weight) ||
+      slope === 0;
+
     const futurePoints = [];
-    if (!isMovingAway && !fallbackMode && estimatedDaysRemaining !== null) {
-      const pointCount = 3;
-      const totalProjectionDuration = estimatedDaysRemaining;
-      const totalProjectionSteps = pointCount + 1;
+    let estimatedDate  = null;
 
-      for (let i = 1; i <= totalProjectionSteps; i++) {
-           const timeFraction = i / totalProjectionSteps;
-           const currentProjectionDays = totalProjectionDuration * timeFraction;
-           const futureDate = new Date(lastDate.getTime() + (currentProjectionDays * 24 * 60 * 60 * 1000));
-           const daysFromStart = (futureDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
-           let projectedWeight;
-           let predictionIntervalMargin = 0;
-
-           if (i === totalProjectionSteps) {
-                projectedWeight = targetWeight;
-           } else {
-                projectedWeight = Number((slope * daysFromStart + intercept).toFixed(1));
-           }
-
-            if (!fallbackMode && sumXX !== 0 && isFinite(standardError) && isFinite(tValue)) {
-                 const sePrediction = standardError * Math.sqrt(1 + (1 / n) + (Math.pow(daysFromStart - xMean, 2) / sumXX));
-                 if (isFinite(sePrediction)) { predictionIntervalMargin = tValue * sePrediction; }
-            }
-
-            let dateLabel;
-             if (i === totalProjectionSteps) {
-                  dateLabel = targetDateRegression.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
-             } else {
-                  const weeksOut = Math.round(Math.abs(currentProjectionDays) / 7);
-                  dateLabel = `+${weeksOut}w`;
-             }
-
-           futurePoints.push({
-             date: dateLabel, dateObj: futureDate, weight: null, trendWeight: projectedWeight,
-             upperBound: fallbackMode ? null : Number((projectedWeight + predictionIntervalMargin).toFixed(1)),
-             lowerBound: fallbackMode ? null : Number((projectedWeight - predictionIntervalMargin).toFixed(1)),
-             isTrendpoint: true
-           });
+    if (!isMovingAway && remaining !== null && remaining > 0 && isFinite(remaining)) {
+      estimatedDate = new Date(firstDateMs + daysToTgt * 86400000);
+      const STEPS = 4;
+      for (let i = 1; i <= STEPS; i++) {
+        const frac        = i / STEPS;
+        const futureDays  = lastDays + remaining * frac;
+        const futureDate  = new Date(firstDateMs + futureDays * 86400000);
+        const projWeight  = i === STEPS ? targetWeight : +(slope * futureDays + intercept).toFixed(1);
+        const dateLabel   = i === STEPS
+          ? estimatedDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
+          : `+${Math.round(remaining * frac / 7)}w`;
+        // No prediction interval bands on projection points to keep chart clean
+        futurePoints.push({
+          date: dateLabel, dateObj: futureDate,
+          weight: null, trendWeight: projWeight,
+          upperBound: null, lowerBound: null,
+          isTrendpoint: true,
+        });
       }
-    } // End projection
-
-    // --- Combine historical regression line with future points ---
-     const regressionLineData = data.map((d, i) => {
-         const daysFromStart = daysArray[i];
-         const trendWeight = Number((slope * daysFromStart + intercept).toFixed(1));
-         let predictionIntervalMargin = 0;
-         if (!fallbackMode && sumXX !== 0 && isFinite(standardError) && isFinite(tValue)) {
-             const sePrediction = standardError * Math.sqrt(1 + (1 / n) + (Math.pow(daysFromStart - xMean, 2) / sumXX));
-             if (isFinite(sePrediction)) { predictionIntervalMargin = tValue * sePrediction; }
-         }
-         return {
-             ...d, weight: Number(d.weight.toFixed(1)), trendWeight: trendWeight,
-             upperBound: fallbackMode ? null : Number((trendWeight + predictionIntervalMargin).toFixed(1)),
-             lowerBound: fallbackMode ? null : Number((trendWeight - predictionIntervalMargin).toFixed(1)),
-         };
-     });
-    const finalCombinedData = [...regressionLineData, ...futurePoints];
-    const finalDaysToTarget = isMovingAway || estimatedDaysRemaining === null ? null : Math.abs(estimatedDaysRemaining);
+    }
 
     return {
-      combinedData: finalCombinedData,
-      estimatedDate: isMovingAway || estimatedDaysRemaining === null ? null : targetDateRegression,
-      regressionStats: { rSquared, slope: slope * 7, daysToTarget: finalDaysToTarget },
-      movingAway: isMovingAway
+      combinedData:    [...regressionLineData, ...futurePoints],
+      estimatedDate,
+      regressionStats: { rSquared, weeklyRate: slope * 7, daysRemaining: remaining },
+      movingAway:      isMovingAway,
+      using2026,
     };
-  }, [data, targetWeight]);
+  }, [data, regressionData, targetWeight]);
 
-   // --- Rendering Logic ---
-   if (!combinedData || combinedData.length === 0) { return <div className="graph-container">Insufficient data or error calculating regression trend.</div>; }
-   // Domain calculation...
-    const allWeights = combinedData.flatMap(d => [ typeof d.weight === 'number' ? d.weight : null, typeof d.trendWeight === 'number' ? d.trendWeight : null, typeof d.upperBound === 'number' ? d.upperBound : null, typeof d.lowerBound === 'number' ? d.lowerBound : null, ]).filter(w => w !== null && isFinite(w));
-    if (allWeights.length === 0) { return <div className="graph-container">No valid weight data to display.</div>; }
-    const minWeight = Math.floor(Math.min(...allWeights));
-    const maxWeight = Math.ceil(Math.max(...allWeights));
-    const domainMin = isFinite(minWeight) ? minWeight - 1 : 0;
-    const domainMax = isFinite(maxWeight) ? maxWeight + 1 : 100;
-    const tickCount = Math.max(3, Math.min(10, Math.ceil(domainMax - domainMin) + 1));
+  if (!combinedData || combinedData.length === 0) {
+    return <div className="graph-container">Insufficient data for regression analysis.</div>;
+  }
 
-    return (
-     <div className="graph-container">
-       <h2>Weight Trend Analysis (Regression)</h2>
-       {/* Display Messages */}
-       {movingAway && regressionStats && ( <div className="estimate-info warning"> <p>Trend is moving away from the target weight of {targetWeight}kg.</p> <p>Weekly rate: {regressionStats.slope.toFixed(2)}kg | R²: {regressionStats.rSquared.toFixed(3)}</p> </div> )}
-       {!movingAway && estimatedDate && regressionStats && regressionStats.daysToTarget !== null && ( <div className="estimate-info"> <p> Est. date to reach {targetWeight}kg: {estimatedDate.toLocaleDateString('en-GB')} <br /> Weekly rate: {regressionStats.slope.toFixed(2)}kg | R²: {regressionStats.rSquared.toFixed(3)} <br /> Est. days remaining: {Math.ceil(regressionStats.daysToTarget)} </p> </div> )}
-       {regressionStats && regressionStats.slope === 0 && ( <div className="estimate-info"> <p>Weight trend is flat. R²: {regressionStats.rSquared.toFixed(3)}</p> </div> )}
+  // ── Domain ────────────────────────────────────────────────────────────────
+  const allW = combinedData.flatMap(d => [d.weight, d.trendWeight, d.upperBound, d.lowerBound])
+    .filter(w => w != null && isFinite(w));
+  if (allW.length === 0) return <div className="graph-container">No valid weight data.</div>;
 
-       {/* Chart Rendering */}
-       <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={combinedData} margin={{ top: 30, right: 50, left: 30, bottom: 50 }} >
-                <CartesianGrid strokeDasharray="3 3" stroke="#555555" />
-                <XAxis dataKey="date" angle={-45} textAnchor="end" height={60} tick={{ dy: 10, fontSize: '0.8em', fill: '#cccccc' }} interval="preserveStartEnd"/>
-                <YAxis domain={[domainMin, domainMax]} tick={{ fontSize: '0.8em', fill: '#cccccc' }} tickCount={tickCount} allowDecimals={false}/>
-                <Tooltip contentStyle={{ backgroundColor: 'rgba(30, 30, 30, 0.85)', border: '1px solid #555555', borderRadius: '4px', color: '#ffffff' }} formatter={(value, name) => [`${value} kg`, name]} labelFormatter={(label) => `Date: ${label}`}/>
-                <Legend verticalAlign="top" height={36} wrapperStyle={{ paddingTop: '10px', paddingBottom: '10px', color: '#cccccc' }}/>
-                <Line type="monotone" dataKey="weight" stroke="#8884d8" strokeWidth={2} dot={{ fill: '#8884d8', r: 3 }} activeDot={{ r: 5 }} name="Weight" connectNulls={false}/>
-                <Line type="linear" dataKey="trendWeight" stroke="#82ca9d" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Trend" connectNulls={true}/>
-                <Line type="linear" dataKey="upperBound" stroke="#ff9999" strokeWidth={1} strokeDasharray="3 3" dot={false} name="Upper Bound (95% PI)" connectNulls={true}/>
-                <Line type="linear" dataKey="lowerBound" stroke="#99ddff" strokeWidth={1} strokeDasharray="3 3" dot={false} name="Lower Bound (95% PI)" connectNulls={true}/>
-            </LineChart>
-       </ResponsiveContainer>
-     </div>
-   );
+  const domainMin = Math.min(Math.floor(Math.min(...allW)), Math.floor(targetWeight)) - 1;
+  const domainMax = Math.max(Math.ceil(Math.max(...allW)),  Math.ceil(targetWeight))  + 1;
+  const tickCount = Math.max(4, Math.min(12, domainMax - domainMin + 1));
+
+  // Show ~16 x-axis labels regardless of data density
+  const xInterval = Math.max(0, Math.floor(combinedData.length / 16));
+
+  return (
+    <div className="graph-container">
+      <div className="graph-header">
+        <h2>Weight Trend — Regression</h2>
+        {using2026 && <span className="badge badge-2026">2026 Data Only</span>}
+      </div>
+
+      {/* Stats banner */}
+      {regressionStats && (
+        <div className={`estimate-info ${movingAway ? 'warning' : ''}`}>
+          {movingAway ? (
+            <p>⚠️ Trend is moving <strong>away</strong> from target {targetWeight} kg &nbsp;|&nbsp;
+               Weekly: {regressionStats.weeklyRate.toFixed(2)} kg &nbsp;|&nbsp;
+               R²: {regressionStats.rSquared.toFixed(3)}</p>
+          ) : estimatedDate ? (
+            <p>
+              🎯 Est. reach <strong>{targetWeight} kg</strong>: {estimatedDate.toLocaleDateString('en-GB')}
+              &nbsp;·&nbsp; {Math.ceil(regressionStats.daysRemaining)} days
+              &nbsp;·&nbsp; {regressionStats.weeklyRate.toFixed(2)} kg/wk
+              &nbsp;·&nbsp; R²: {regressionStats.rSquared.toFixed(3)}
+            </p>
+          ) : (
+            <p>R²: {regressionStats.rSquared.toFixed(3)} &nbsp;|&nbsp; Weekly: {regressionStats.weeklyRate.toFixed(2)} kg</p>
+          )}
+        </div>
+      )}
+
+      <ResponsiveContainer width="100%" height={420}>
+        <LineChart data={combinedData} margin={{ top: 20, right: 40, left: 10, bottom: 60 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
+          <XAxis
+            dataKey="date"
+            angle={-45}
+            textAnchor="end"
+            height={60}
+            tick={{ dy: 10, fontSize: '0.72em', fill: '#8892b0' }}
+            interval={xInterval}
+            axisLine={{ stroke: '#444' }}
+            tickLine={{ stroke: '#444' }}
+          />
+          <YAxis
+            domain={[domainMin, domainMax]}
+            tick={{ fontSize: '0.8em', fill: '#8892b0' }}
+            tickCount={tickCount}
+            allowDecimals={false}
+            axisLine={{ stroke: '#444' }}
+            tickLine={{ stroke: '#444' }}
+          />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend
+            verticalAlign="top"
+            height={36}
+            wrapperStyle={{ paddingTop: '8px', fontSize: '0.85em', color: '#8892b0' }}
+          />
+
+          {/* Target weight reference line */}
+          <ReferenceLine
+            y={targetWeight}
+            stroke="#e040fb"
+            strokeDasharray="6 3"
+            label={{ value: `Target ${targetWeight} kg`, fill: '#e040fb', fontSize: '0.72em', position: 'insideTopRight' }}
+          />
+
+          {/* Prediction interval bands — historical only (connectNulls=false stops at null values) */}
+          <Line type="linear" dataKey="upperBound" stroke="#ff6b8a" strokeWidth={1}
+            strokeDasharray="3 3" dot={false} name="Upper 95% PI" connectNulls={false} legendType="none" />
+          <Line type="linear" dataKey="lowerBound" stroke="#56ccf2" strokeWidth={1}
+            strokeDasharray="3 3" dot={false} name="Lower 95% PI" connectNulls={false} legendType="none" />
+
+          {/* Regression / projection trend */}
+          <Line type="linear" dataKey="trendWeight" stroke="#69f0ae" strokeWidth={2}
+            strokeDasharray="6 3" dot={false} name="Regression Trend" connectNulls={true} />
+
+          {/* Actual weight measurements */}
+          <Line type="monotone" dataKey="weight" stroke="#7c83fd" strokeWidth={2}
+            dot={{ fill: '#7c83fd', r: 2 }} activeDot={{ r: 5 }} name="Weight" connectNulls={false} />
+
+          {/* Zoom brush */}
+          <Brush dataKey="date" height={22} stroke="#333" fill="#0d0d1a" travellerWidth={8}
+            startIndex={Math.max(0, combinedData.length - 90)}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
 };
 
 export default TrendGraph;
